@@ -1,4 +1,5 @@
 #include <getopt.h>
+#include <limits.h> /* for CHAR_BIT */
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -23,8 +24,12 @@
 //#define SIG_LENGTH	256  /* Moved to main() */
 //#define SIG_CACHE_SIZE	(SIG_LENGTH * 512)  /* In bytes */
 
+//#define DATA_XFER_QUEUE_LEN 4
+//static int data_xfer_queue[DATA_XFER_QUEUE_LEN];
 
-typedef struct {
+#define BLOOM_FILTER_BITS_PER_SIG 10
+
+struct cuda_avscan_options {
     char scan_root[256];
     char sig_file[256];
 } cudav_options_t;
@@ -39,10 +44,10 @@ void show_usage(int argc, char **argv)
 }
 
 
-int parse_args(cudav_options_t *opts, int argc, char** argv)
+int parse_args(struct cuda_avscan_options *opts, int argc, char** argv)
 {
     /* Set default values */
-    memset(opts, 0, sizeof(cudav_options_t));
+    memset(opts, 0, sizeof(struct cuda_avscan_options));
     strcpy(opts->scan_root, "./");
     strcpy(opts->sig_file, "./generated_sigs.cdv");
 
@@ -113,7 +118,20 @@ unsigned char *sig_cache_alloc(size_t size_in_bytes)
 }
 
 
-FILE *sig_file_open(const char *sig_file)
+unsigned char *bf_alloc(size_t size_in_bytes)
+{
+    unsigned char *d_bf = NULL;
+
+#if GENE_HAS_CUDA
+    cutilSafeCall (cudaMalloc (d_bf, size_in_bytes));
+#endif
+
+    return d_bf;
+}
+
+
+
+FILE *sig_file_open(const char *sig_file, size_t *num_sigs)
 {
     FILE *sig_file_handle = NULL;
     sig_file_handle = fopen(sig_file, "r");
@@ -122,7 +140,8 @@ FILE *sig_file_open(const char *sig_file)
         return NULL;
 
     /* Generated signature file prepended with 'int num_sigs' */
-    fseek(sig_file_handle, sizeof (int), SEEK_SET);
+    //fseek(sig_file_handle, sizeof (int), SEEK_SET);
+    fread(num_sigs, sizeof *(num_sigs), 1, sig_file_handle);
 
     return sig_file_handle;
 }
@@ -136,10 +155,11 @@ size_t sig_cache_fill(unsigned char *d_sig_cache, size_t bytes, FILE *sig_file)
 
     size_t r = fread(buf, bytes, 1, sig_file);
     /* TODO: Copy from host to device memory */
-#if 0
     if (r != 0) {
-	cudaError_t c = cudaStreamCreate(&(sc->h_blocks[index].sid));
-
+#if GENE_HAS_CUDA
+	//cutilSafeCall (cudaStreamCreate (&(sc->h_blocks[index].sid));
+        cutilSafeCall (cudaMemcpy (d_sig_cache, buf, bytes, cudaMemcpyHostToDevice));
+#if 0
 int sig_cache_insert(Signature_Cache* sc,unsigned char* sig_block,
                      int block_size,int index,int sig_count){
 
@@ -160,9 +180,12 @@ int sig_cache_insert(Signature_Cache* sc,unsigned char* sig_block,
 	return index;
 }
 #endif
+#endif
+    }
 
-    return 0;
+    return r;
 }
+
 
 int main(int argc, char **argv)
 {
@@ -171,40 +194,56 @@ int main(int argc, char **argv)
     } gpu_handle;
     */
 
-    cudav_options_t opts;
+    struct cuda_avscan_options opts;
     if (parse_args(&opts, argc, argv) < 0)
         show_usage(argc, argv);
 
 
-    /* For reference:
-     *   Latest ClamAV® stable release is: 0.95.3 
-     *   Total number of signatures: 719461
-     */
     unsigned char *d_sig_cache;
     const size_t cache_num_sigs = 1000;
     const size_t sig_length = 256; /* See note for SIG_LENGTH */
+    size_t sig_cache_bytes = cache_num_sigs * sig_length;
 
-    d_sig_cache = sig_cache_alloc(cache_num_sigs * sig_length);
+    d_sig_cache = sig_cache_alloc(sig_cache_bytes);
 
 
     FILE *sig_file_handle;
-    sig_file_handle = sig_file_open(opts.sig_file);
+    /* For reference:
+     *   Latest ClamAV® stable release is: 0.95.3
+     *   Total number of signatures: 719461
+     */
+    size_t total_num_sigs = 0;
+    sig_file_handle = sig_file_open(opts.sig_file, &total_num_sigs);
 
     if (!sig_file_handle) {
         fprintf(stderr, "Cannot open signature file\n");
         return -1;
     }
+    if (total_num_sigs <= 0) {
+        fprintf(stderr, "Number of signatures not positive\n");
+        return -1;
+    }
 
 
-    sig_cache_fill(d_sig_cache, cache_num_sigs * sig_length, sig_file_handle);
+    unsigned char *d_bloom_filter;
+    size_t filter_size = total_num_sigs * BLOOM_FILTER_BITS_PER_SIG / CHAR_BIT;
+    d_bloom_filter = bf_alloc(filter_size);
 
+
+    size_t num_sigs_filled;
+    num_sigs_filled = sig_cache_fill(d_sig_cache, sig_cache_bytes, sig_file_handle);
+    while (num_sigs_filled > 0) {
+        int r = -1;
+        //r = launch_bf_sig_insert(d_sig_cache, num_sigs_filled, d_bloom_filter);
+        if (r < 0) {
+            fprintf(stderr,"Failed to insert signature into bloom filter.\n");
+            return -1;
+        }
+
+        num_sigs_filled = sig_cache_fill(d_sig_cache, sig_cache_bytes, sig_file_handle);
+    }
 
 #if 0
-    while (sig_cache_fill(d_sig_cache, sig_file_handle) >= 0) {
-
-    }
-    unsigned int filter_size = 256; /* in bytes */
-
     /* This is on host, but want on device
     unsigned char *bf = (unsigned char *) malloc(sizeof(unsigned char) * filter_size);
     if (!bf)

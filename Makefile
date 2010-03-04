@@ -6,7 +6,7 @@ all: cuda_avscan
 cuda_avscan: cuda_avscan.o
 
 cuda_avscan.o: cuda_avscan.c
-	$(CC) $(CFLAGS) cuda_avscan.c -o $@
+	$(CC) $(CFLAGS) $< -o $@
 
 clean:
 	rm -rf *.o cuda_avscan
