@@ -1,0 +1,39 @@
+#######################################
+#                                     #
+#  Author: Wade Norris                #
+#                                     #
+#  Date Created: Feb 20, 2010         #
+#                                     #
+#  This bash script compiles          #
+#  and runs the c code in             #
+#  the file "hashtest.c".             #
+#                                     #
+#######################################
+
+clear
+echo ""
+echo ""
+echo "********************************"
+echo "*                              *"
+echo "*  Compiling and Running Code  *"
+echo "*                              *"
+echo "********************************"
+echo ""
+
+echo "Compile Messages:"
+echo ""
+gcc -o hashtest hashtest.c
+echo ""
+echo "********************************"
+echo ""
+
+echo "Code Output:"
+echo ""
+./hashtest
+echo ""
+
+echo "********************************"
+echo ""
+echo "Code Execution Complete"
+echo ""
+
