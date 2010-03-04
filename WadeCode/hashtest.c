@@ -55,6 +55,16 @@ int main(void)
 	char* word = "hellotheregoodsirthisstring is supposed to be verylongtofindoutwhenthereisoverflowbutitusuallyhappensatchar8sothisismorethanenough";
 	printf("Hash Test\n\n");
 	
+	int firsthashvals[mylength];
+	int secondhashvals[mylength];
+	
+	int j;
+	for(j=0; j<mylength; j++)
+	{
+		firsthashvals[j] = 0;
+		secondhashvals[j] = 0;
+	}
+	
 	/****************************************
 	 THIS CODE IS USED TO CHECK WHEN THERE WILL BE OVERFLOW 
 	
@@ -88,10 +98,11 @@ int main(void)
 	// Manual full hash of each 
 	
 	int i;
-	for(i=0; i+mylength+5 < mylength; i++)
+	for(i=0; i+4 < mylength; i++)
 	{
 		rollready_hash(word+i, 4, &curhash);
 		printf("hash(h) = %u\n\n", curhash);
+		firsthashvals[i] = curhash;
 	}
 	
 	// Rolling hash where first is fully hashed
@@ -102,13 +113,25 @@ int main(void)
 	
 	rollready_hash(word, 4, &curhash);
 	printf("First hash value = %u\n", curhash);
+	secondhashvals[cur] = curhash;
 	
-	while((cur+mylength+5) < mylength)
+	while((cur+5) < mylength)
 	{
 		roll(word, 4);
 		printf("Next hash value = %u\n", curhash);
+		secondhashvals[cur] = curhash;
 	}
 	
 	/* END OF ROLLING HASH TEST
 	 ****************************************/
+	
+	// Check to ensure hash values are the same:
+	
+	printf("\nChecking hash values:\n");
+	
+	for(i=0; i<mylength; i++)
+	{
+		if(firsthashvals[i] != secondhashvals[i])
+			printf("Error is hash value compares at location %u hashes equal %u and %u. \n", i, firsthashvals[i], secondhashvals[i]);
+	}
 }
